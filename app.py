@@ -1,186 +1,124 @@
-import os
-import datetime as dt
-
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
+import plotly.express as px
 
-# ---------------------------
-# Page setup
-# ---------------------------
+# -----------------------------
+# Page configuration
+# -----------------------------
 st.set_page_config(
-    page_title="U.S. Labor Market Dashboard",
+    page_title="Labor Market Dashboard",
     layout="wide"
 )
 
-st.title("U.S. Labor Market Dashboard")
-st.write(
-    """
-    This dashboard explores several U.S. labor market indicators using data from the
-    Bureau of Labor Statistics (BLS) Public API. Use the filters in the sidebar to
-    change the time range and view how the indicators move over time.
-    """
-)
+# -----------------------------
+# Styling
+# -----------------------------
+BLUE = "#1F4E79"  #Blue
 
-# ---------------------------
-# Load data (cached)
-# ---------------------------
+# -----------------------------
+# Load data
+# -----------------------------
 @st.cache_data
-def load_data(path="labor_data.csv"):
-    df = pd.read_csv(path)
-    df["date"] = pd.to_datetime(df["date"])
-    df = df.sort_values("date")
+def load_data():
+    df = pd.read_csv("labor_data.csv")
+
+    # Ensure date column is datetime
+    df["date"] = pd.to_datetime(df["date"], errors="coerce")
+
     return df
+
 
 df = load_data()
 
-# ---------------------------
-# Last updated (from file timestamp)
-# ---------------------------
-try:
-    last_updated = dt.datetime.fromtimestamp(os.path.getmtime("labor_data.csv"))
-    st.caption(f"Data last updated: {last_updated:%B %d, %Y}")
-except Exception:
-    pass
+if df.empty:
+    st.error("labor_data.csv is empty or could not be loaded.")
+    st.stop()
 
-# ---------------------------
-# Sidebar filters
-# ---------------------------
-st.sidebar.header("Filters")
-
-min_d, max_d = df["date"].min(), df["date"].max()
-start, end = st.sidebar.date_input(
-    "Date range",
-    value=(min_d.date(), max_d.date())
+# -----------------------------
+# Title + subtle blue divider
+# -----------------------------
+st.markdown(
+    f"""
+    <h1 style="margin-bottom:0.25rem;">Labor Market Dashboard</h1>
+    <hr style="height:3px;border:none;background-color:{BLUE};
+        margin-top:0;margin-bottom:1.25rem;" />
+    """,
+    unsafe_allow_html=True
 )
 
-filtered = df[(df["date"].dt.date >= start) & (df["date"].dt.date <= end)].copy()
-filtered = filtered.sort_values("date")
+# -----------------------------
+# Last updated
+# -----------------------------
+last_updated = df["date"].max()
 
-# ---------------------------
-# Summary metrics (latest in selected range + change from previous month)
-# ---------------------------
-st.subheader("Summary metrics")
-st.write("Values shown are the latest month in the selected range. The change shows the difference from the previous month.")
+st.markdown(
+    f"<span style='color:{BLUE}; font-size:13px;'>Last updated: {last_updated.date()}</span>",
+    unsafe_allow_html=True
+)
 
-def metric_with_delta(label, series, value_format, delta_format):
-    """
-    Displays a metric for the latest value in 'series' and a delta vs prior value.
-    If fewer than 2 observations exist, delta is omitted.
-    """
-    if len(series) == 0:
-        st.metric(label, "—")
-        return
+st.markdown("---")
 
-    latest_val = series.iloc[-1]
+# -----------------------------
+# Metric selector (wide format)
+# -----------------------------
+metric_columns = [
+    col for col in df.columns if col != "date"
+]
 
-    if len(series) < 2:
-        st.metric(label, value_format(latest_val))
-        return
+selected_metric = st.selectbox(
+    "Select metric",
+    metric_columns,
+    format_func=lambda x: x.replace("_", " ").title()
+)
 
-    prev_val = series.iloc[-2]
-    delta = latest_val - prev_val
-    st.metric(label, value_format(latest_val), delta_format(delta))
+# -----------------------------
+# Prepare data
+# -----------------------------
+plot_df = df[["date", selected_metric]].dropna()
 
-col1, col2, col3, col4 = st.columns(4)
+# -----------------------------
+# Section header
+# -----------------------------
+st.markdown(
+    f"<h3 style='color:{BLUE};'>Trend Over Time</h3>",
+    unsafe_allow_html=True
+)
 
-with col1:
-    metric_with_delta(
-        "Unemployment Rate",
-        filtered["unemployment_rate"],
-        lambda v: f"{v:.1f}%",
-        lambda d: f"{d:+.1f} pts"
-    )
+# -----------------------------
+# Line chart
+# -----------------------------
+fig = px.line(
+    plot_df,
+    x="date",
+    y=selected_metric,
+    labels={
+        "date": "Date",
+        selected_metric: selected_metric.replace("_", " ").title()
+    },
+    color_discrete_sequence=[BLUE]
+)
 
-with col2:
-    metric_with_delta(
-        "Labor Force Participation",
-        filtered["labor_force_participation"],
-        lambda v: f"{v:.1f}%",
-        lambda d: f"{d:+.1f} pts"
-    )
+fig.update_layout(
+    height=450,
+    margin=dict(l=20, r=20, t=20, b=20)
+)
 
-with col3:
-    metric_with_delta(
-        "Average Hourly Earnings",
-        filtered["average_hourly_earnings"],
-        lambda v: f"${v:,.2f}",
-        lambda d: f"{d:+.2f}"
-    )
+st.plotly_chart(fig, use_container_width=True)
 
-with col4:
-    metric_with_delta(
-        "Nonfarm Employment",
-        filtered["nonfarm_employment"],
-        lambda v: f"{int(v):,} (thousands)",
-        lambda d: f"{int(d):+,} (thousands)"
-    )
-
-# ---------------------------
-# Charts
-# ---------------------------
-st.subheader("Unemployment Rate Over Time")
-fig1, ax1 = plt.subplots()
-ax1.plot(filtered["date"], filtered["unemployment_rate"])
-ax1.set_xlabel("Date")
-ax1.set_ylabel("Percent")
-st.pyplot(fig1)
+# -----------------------------
+# Summary insight
+# -----------------------------
+latest_value = plot_df.iloc[-1][selected_metric]
+latest_date = plot_df.iloc[-1]["date"].date()
 
 st.write(
-    "This chart shows how the unemployment rate changes over the selected time period."
+    f"Most recent value for **{selected_metric.replace('_', ' ').title()}**: "
+    f"**{latest_value}** ({latest_date})"
 )
 
-st.subheader("Labor Force Participation Rate Over Time")
-fig2, ax2 = plt.subplots()
-ax2.plot(filtered["date"], filtered["labor_force_participation"])
-ax2.set_xlabel("Date")
-ax2.set_ylabel("Percent")
-st.pyplot(fig2)
+# -----------------------------
+# Optional data preview
+# -----------------------------
+with st.expander("Show data preview"):
+    st.dataframe(plot_df, use_container_width=True)
 
-st.write(
-    "This chart shows how the labor force participation rate moves over time."
-)
-
-st.subheader("Average Hourly Earnings Over Time")
-fig3, ax3 = plt.subplots()
-ax3.plot(filtered["date"], filtered["average_hourly_earnings"])
-ax3.set_xlabel("Date")
-ax3.set_ylabel("Dollars")
-st.pyplot(fig3)
-
-st.write(
-    "This chart shows the trend in average hourly earnings over the selected months."
-)
-
-st.subheader("Total Nonfarm Employment Over Time")
-fig4, ax4 = plt.subplots()
-ax4.plot(filtered["date"], filtered["nonfarm_employment"])
-ax4.set_xlabel("Date")
-ax4.set_ylabel("Employment (Thousands)")
-st.pyplot(fig4)
-
-st.write(
-    "This chart shows total nonfarm employment over time (in thousands)."
-)
-
-# ---------------------------
-# Download + data preview
-# ---------------------------
-st.subheader("Download data")
-st.download_button(
-    label="Download filtered data (CSV)",
-    data=filtered.to_csv(index=False).encode("utf-8"),
-    file_name="labor_data_filtered.csv",
-    mime="text/csv",
-)
-
-with st.expander("View filtered data"):
-    st.dataframe(filtered, use_container_width=True)
-
-# ---------------------------
-# Footer
-# ---------------------------
-st.caption(
-    "Data Source: U.S. Bureau of Labor Statistics | "
-    "Project for ECON 8320 – Tools for Data Analysis"
-)
