@@ -1,124 +1,187 @@
+import os
+import datetime as dt
+
 import streamlit as st
 import pandas as pd
-import plotly.express as px
+import matplotlib.pyplot as plt
 
-# -----------------------------
-# Page configuration
-# -----------------------------
+# ---------------------------
+# Page setup
+# ---------------------------
 st.set_page_config(
-    page_title="Labor Market Dashboard",
+    page_title="U.S. Labor Market Dashboard",
     layout="wide"
 )
 
-# -----------------------------
-# Styling
-# -----------------------------
-BLUE = "#1F4E79"  #Blue
+st.title("U.S. Labor Market Dashboard")
+st.write(
+    """
+    This dashboard explores several U.S. labor market indicators using data from the
+    Bureau of Labor Statistics (BLS) Public API. Use the options below to change how
+    the charts are displayed.
+    """
+)
 
-# -----------------------------
-# Load data
-# -----------------------------
+# ---------------------------
+# Load data (cached)
+# ---------------------------
 @st.cache_data
-def load_data():
-    df = pd.read_csv("labor_data.csv")
-
-    # Ensure date column is datetime
-    df["date"] = pd.to_datetime(df["date"], errors="coerce")
-
+def load_data(path="labor_data.csv"):
+    df = pd.read_csv(path)
+    df["date"] = pd.to_datetime(df["date"])
+    df = df.sort_values("date")
     return df
-
 
 df = load_data()
 
-if df.empty:
-    st.error("labor_data.csv is empty or could not be loaded.")
-    st.stop()
+# ---------------------------
+# Last updated (from file timestamp)
+# ---------------------------
+try:
+    last_updated = dt.datetime.fromtimestamp(os.path.getmtime("labor_data.csv"))
+    st.caption(f"Data last updated: {last_updated:%B %d, %Y}")
+except Exception:
+    pass
 
-# -----------------------------
-# Title + subtle blue divider
-# -----------------------------
-st.markdown(
-    f"""
-    <h1 style="margin-bottom:0.25rem;">Labor Market Dashboard</h1>
-    <hr style="height:3px;border:none;background-color:{BLUE};
-        margin-top:0;margin-bottom:1.25rem;" />
-    """,
-    unsafe_allow_html=True
+# ---------------------------
+# Display options
+# ---------------------------
+st.subheader("Display options")
+
+c1, c2, c3 = st.columns(3)
+
+with c1:
+    chart_style = st.radio("Chart style", ["Line", "Scatter"], horizontal=True)
+
+with c2:
+    show_mavg = st.checkbox("Show moving average", value=False)
+
+with c3:
+    window = st.slider("Moving average window (months)", min_value=2, max_value=12, value=3, disabled=not show_mavg)
+
+show_table = st.checkbox("Show data table", value=False)
+
+# ---------------------------
+# Summary metrics 
+# ---------------------------
+st.subheader("Summary metrics (latest month)")
+
+latest = df.iloc[-1]
+prev = df.iloc[-2] if len(df) >= 2 else None
+
+col1, col2, col3, col4 = st.columns(4)
+
+def mom_delta(col):
+    if prev is None:
+        return None
+    return latest[col] - prev[col]
+
+col1.metric(
+    "Unemployment Rate",
+    f"{latest['unemployment_rate']:.1f}%",
+    f"{mom_delta('unemployment_rate'):+.1f} pts" if prev is not None else None
 )
 
-# -----------------------------
-# Last updated
-# -----------------------------
-last_updated = df["date"].max()
-
-st.markdown(
-    f"<span style='color:{BLUE}; font-size:13px;'>Last updated: {last_updated.date()}</span>",
-    unsafe_allow_html=True
+col2.metric(
+    "Labor Force Participation",
+    f"{latest['labor_force_participation']:.1f}%",
+    f"{mom_delta('labor_force_participation'):+.1f} pts" if prev is not None else None
 )
 
-st.markdown("---")
-
-# -----------------------------
-# Metric selector (wide format)
-# -----------------------------
-metric_columns = [
-    col for col in df.columns if col != "date"
-]
-
-selected_metric = st.selectbox(
-    "Select metric",
-    metric_columns,
-    format_func=lambda x: x.replace("_", " ").title()
+col3.metric(
+    "Average Hourly Earnings",
+    f"${latest['average_hourly_earnings']:,.2f}",
+    f"{mom_delta('average_hourly_earnings'):+.2f}" if prev is not None else None
 )
 
-# -----------------------------
-# Prepare data
-# -----------------------------
-plot_df = df[["date", selected_metric]].dropna()
-
-# -----------------------------
-# Section header
-# -----------------------------
-st.markdown(
-    f"<h3 style='color:{BLUE};'>Trend Over Time</h3>",
-    unsafe_allow_html=True
+col4.metric(
+    "Nonfarm Employment",
+    f"{int(latest['nonfarm_employment']):,} (thousands)",
+    f"{int(mom_delta('nonfarm_employment')):+,} (thousands)" if prev is not None else None
 )
 
-# -----------------------------
-# Line chart
-# -----------------------------
-fig = px.line(
-    plot_df,
-    x="date",
-    y=selected_metric,
-    labels={
-        "date": "Date",
-        selected_metric: selected_metric.replace("_", " ").title()
-    },
-    color_discrete_sequence=[BLUE]
+# ---------------------------
+# plot
+# ---------------------------
+def plot_series(y_col, y_label, note_text):
+    fig, ax = plt.subplots()
+
+    if chart_style == "Scatter":
+        ax.scatter(df["date"], df[y_col])
+    else:
+        ax.plot(df["date"], df[y_col])
+
+    if show_mavg:
+        mavg = df[y_col].rolling(window=window).mean()
+        ax.plot(df["date"], mavg)
+
+    ax.set_xlabel("Date")
+    ax.set_ylabel(y_label)
+    st.pyplot(fig)
+
+    st.write(note_text)
+
+# ---------------------------
+# Tabs 
+# ---------------------------
+tab1, tab2, tab3, tab4 = st.tabs([
+    "Unemployment",
+    "Participation",
+    "Hourly Earnings",
+    "Nonfarm Employment"
+])
+
+with tab1:
+    st.subheader("Unemployment Rate Over Time")
+    plot_series(
+        "unemployment_rate",
+        "Percent",
+        "This chart shows how the unemployment rate changes over time."
+    )
+
+with tab2:
+    st.subheader("Labor Force Participation Rate Over Time")
+    plot_series(
+        "labor_force_participation",
+        "Percent",
+        "This chart shows how the labor force participation rate moves over time."
+    )
+
+with tab3:
+    st.subheader("Average Hourly Earnings Over Time")
+    plot_series(
+        "average_hourly_earnings",
+        "Dollars",
+        "This chart shows the trend in average hourly earnings over time."
+    )
+
+with tab4:
+    st.subheader("Total Nonfarm Employment Over Time")
+    plot_series(
+        "nonfarm_employment",
+        "Employment (Thousands)",
+        "This chart shows total nonfarm employment over time (in thousands)."
+    )
+
+# ---------------------------
+# Download 
+# ---------------------------
+st.subheader("Download data")
+
+st.download_button(
+    label="Download full dataset (CSV)",
+    data=df.to_csv(index=False).encode("utf-8"),
+    file_name="labor_data.csv",
+    mime="text/csv",
 )
 
-fig.update_layout(
-    height=450,
-    margin=dict(l=20, r=20, t=20, b=20)
+if show_table:
+    st.dataframe(df, use_container_width=True)
+
+# ---------------------------
+# Footer
+# ---------------------------
+st.caption(
+    "Data Source: U.S. Bureau of Labor Statistics | "
+    "Project for ECON 8320 – Tools for Data Analysis"
 )
-
-st.plotly_chart(fig, use_container_width=True)
-
-# -----------------------------
-# Summary insight
-# -----------------------------
-latest_value = plot_df.iloc[-1][selected_metric]
-latest_date = plot_df.iloc[-1]["date"].date()
-
-st.write(
-    f"Most recent value for **{selected_metric.replace('_', ' ').title()}**: "
-    f"**{latest_value}** ({latest_date})"
-)
-
-# -----------------------------
-# Optional data preview
-# -----------------------------
-with st.expander("Show data preview"):
-    st.dataframe(plot_df, use_container_width=True)
-
