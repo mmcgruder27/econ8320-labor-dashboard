@@ -2,7 +2,7 @@ name: Update BLS data
 
 on:
   schedule:
-    # Runs every Monday at 6:15 AM UTC (~12:15 AM CST / 1:15 AM CDT)
+    # Runs every Monday 
     - cron: "15 6 * * 1"
   workflow_dispatch:
 
@@ -28,9 +28,6 @@ jobs:
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
       - name: Run BLS collection script
-        env:
-          # If you use a BLS API key, add it as a GitHub secret named BLS_API_KEY
-          BLS_API_KEY: ${{ secrets.BLS_API_KEY }}
         run: |
           python collect_bls.py
 
