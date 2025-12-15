@@ -5,9 +5,7 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 
-# ---------------------------
 # Page setup
-# ---------------------------
 st.set_page_config(
     page_title="U.S. Labor Market Dashboard",
     layout="wide"
@@ -22,9 +20,8 @@ st.write(
     """
 )
 
-# ---------------------------
-# Load data (cached)
-# ---------------------------
+# Load data 
+
 @st.cache_data
 def load_data(path="labor_data.csv"):
     df = pd.read_csv(path)
@@ -34,18 +31,14 @@ def load_data(path="labor_data.csv"):
 
 df = load_data()
 
-# ---------------------------
 # Last updated (from file timestamp)
-# ---------------------------
 try:
     last_updated = dt.datetime.fromtimestamp(os.path.getmtime("labor_data.csv"))
     st.caption(f"Data last updated: {last_updated:%B %d, %Y}")
 except Exception:
     pass
 
-# ---------------------------
 # Display options
-# ---------------------------
 st.subheader("Display options")
 
 c1, c2, c3 = st.columns(3)
@@ -61,9 +54,8 @@ with c3:
 
 show_table = st.checkbox("Show data table", value=False)
 
-# ---------------------------
+
 # Summary metrics 
-# ---------------------------
 st.subheader("Summary metrics (latest month)")
 
 latest = df.iloc[-1]
@@ -100,9 +92,8 @@ col4.metric(
     f"{int(mom_delta('nonfarm_employment')):+,} (thousands)" if prev is not None else None
 )
 
-# ---------------------------
 # plot
-# ---------------------------
+
 def plot_series(y_col, y_label, note_text):
     fig, ax = plt.subplots()
 
@@ -121,9 +112,8 @@ def plot_series(y_col, y_label, note_text):
 
     st.write(note_text)
 
-# ---------------------------
 # Tabs 
-# ---------------------------
+
 tab1, tab2, tab3, tab4 = st.tabs([
     "Unemployment",
     "Participation",
@@ -163,9 +153,9 @@ with tab4:
         "This chart shows total nonfarm employment over time (in thousands)."
     )
 
-# ---------------------------
+
 # Download 
-# ---------------------------
+
 st.subheader("Download data")
 
 st.download_button(
@@ -178,9 +168,9 @@ st.download_button(
 if show_table:
     st.dataframe(df, use_container_width=True)
 
-# ---------------------------
+
 # Footer
-# ---------------------------
+
 st.caption(
     "Data Source: U.S. Bureau of Labor Statistics | "
     "Project for ECON 8320 – Tools for Data Analysis"
