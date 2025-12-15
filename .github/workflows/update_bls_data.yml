@@ -1,0 +1,51 @@
+name: Update BLS data
+
+on:
+  schedule:
+    # Runs every Monday at 6:15 AM UTC (~12:15 AM CST / 1:15 AM CDT)
+    - cron: "15 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-data:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Run BLS collection script
+        env:
+          # If you use a BLS API key, add it as a GitHub secret named BLS_API_KEY
+          BLS_API_KEY: ${{ secrets.BLS_API_KEY }}
+        run: |
+          python collect_bls.py
+
+      - name: Commit and push if data changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add labor_data.csv
+
+          # Only commit if something actually changed
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          git commit -m "Automated update: labor_data.csv"
+          git push
